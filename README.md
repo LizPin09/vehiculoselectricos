@@ -168,5 +168,7 @@ Los datos históricos (2016–2026) provienen de las tablas Gold. Las proyeccion
 
 <img width="1359" height="668" alt="image" src="https://github.com/user-attachments/assets/d0ba1909-746b-4734-8c75-e97c6e65a09c" />
 
-
+Este trabajo está presentado por: 
+Lucela Montoya Quintero
+Lizeth Catalina Pineda Arteaga
 
