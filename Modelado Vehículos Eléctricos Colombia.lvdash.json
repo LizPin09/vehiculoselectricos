@@ -1,0 +1,1353 @@
+{
+  "datasets": [
+    {
+      "name": "clasificacion_muni",
+      "displayName": "Clasificación Municipios por Adopción",
+      "queryLines": [
+        "SELECT\n",
+        "  *\n",
+        "FROM\n",
+        "  gold_clasificacion_municipios_adopcion"
+      ]
+    },
+    {
+      "name": "proporcion_dep",
+      "displayName": "Proporción Eléctricos por Departamento",
+      "queryLines": [
+        "SELECT\n",
+        "  *\n",
+        "FROM\n",
+        "  gold_proporcion_electricos_departamento"
+      ]
+    },
+    {
+      "name": "kpis_modelos",
+      "displayName": "KPIs Modelos Predictivos",
+      "queryLines": [
+        "SELECT\n",
+        "  332901 AS Total_Electricos_Hibridos,\n",
+        "  7.52 AS Proporcion_2026,\n",
+        "  57.7 AS CAGR_Electricos,\n",
+        "  9.5 AS Techo_Adopcion"
+      ]
+    },
+    {
+      "name": "parque_vs_elec",
+      "displayName": "Parque Total vs Eléctricos por Año",
+      "queryLines": [
+        "SELECT\n",
+        "  REGISTRO,\n",
+        "  'Parque Total' AS Tipo,\n",
+        "  TOTAL_PARQUE AS Valor\n",
+        "FROM\n",
+        "  gold_proporcion_electricos_anio\n",
+        "UNION ALL\n",
+        "SELECT\n",
+        "  REGISTRO,\n",
+        "  'Electricos/Hibridos' AS Tipo,\n",
+        "  TOTAL_ELECTRICOS AS Valor\n",
+        "FROM\n",
+        "  gold_proporcion_electricos_anio"
+      ]
+    },
+    {
+      "name": "proporcion_anio",
+      "displayName": "Proporción Eléctricos por Año",
+      "queryLines": [
+        "SELECT\n",
+        "  *\n",
+        "FROM\n",
+        "  gold_proporcion_electricos_anio"
+      ]
+    },
+    {
+      "name": "top_deps_prop",
+      "displayName": "Top Departamentos por Proporción",
+      "queryLines": [
+        "SELECT\n",
+        "  DEPARTAMENTO,\n",
+        "  ROUND(SUM(TOTAL_ELECTRICOS) / SUM(TOTAL_PARQUE) * 100, 2) AS Proporcion_Pct\n",
+        "FROM\n",
+        "  gold_proporcion_electricos_departamento\n",
+        "GROUP BY\n",
+        "  DEPARTAMENTO\n",
+        "ORDER BY\n",
+        "  Proporcion_Pct DESC"
+      ]
+    },
+    {
+      "name": "muni_lideres",
+      "displayName": "Municipios Líderes en Adopción",
+      "queryLines": [
+        "SELECT\n",
+        "  MUNICIPIO,\n",
+        "  DEPARTAMENTO,\n",
+        "  TOTAL_PARQUE,\n",
+        "  TOTAL_ELECTRICOS,\n",
+        "  PROPORCION_PORCENTAJE\n",
+        "FROM\n",
+        "  gold_clasificacion_municipios_adopcion\n",
+        "WHERE\n",
+        "  NIVEL_ADOPCION = 'Líder (≥10%)'\n",
+        "ORDER BY\n",
+        "  PROPORCION_PORCENTAJE DESC"
+      ]
+    },
+    {
+      "name": "top_muni_prop",
+      "displayName": "Top 20 Municipios por Proporción",
+      "queryLines": [
+        "SELECT\n",
+        "  MUNICIPIO,\n",
+        "  DEPARTAMENTO,\n",
+        "  TOTAL_PARQUE,\n",
+        "  TOTAL_ELECTRICOS,\n",
+        "  PROPORCION_PORCENTAJE\n",
+        "FROM\n",
+        "  gold_clasificacion_municipios_adopcion\n",
+        "ORDER BY\n",
+        "  PROPORCION_PORCENTAJE DESC\n",
+        "LIMIT 20"
+      ]
+    },
+    {
+      "name": "predicciones_ml",
+      "displayName": "Predicciones ML Eléctricos",
+      "queryLines": [
+        "WITH params AS (\n",
+        "  SELECT\n",
+        "    9.51 AS L,\n",
+        "    2024 AS t0,\n",
+        "    0.6647 AS k,\n",
+        "    (\n",
+        "      SELECT\n",
+        "        TOTAL_PARQUE\n",
+        "      FROM\n",
+        "        gold_proporcion_electricos_anio\n",
+        "      WHERE\n",
+        "        REGISTRO\n",
+        "          = (\n",
+        "            SELECT\n",
+        "              MAX(REGISTRO)\n",
+        "            FROM\n",
+        "              gold_proporcion_electricos_anio\n",
+        "          )\n",
+        "    ) AS base_parque,\n",
+        "    (\n",
+        "      SELECT\n",
+        "        MAX(REGISTRO)\n",
+        "      FROM\n",
+        "        gold_proporcion_electricos_anio\n",
+        "    ) AS base_anio\n",
+        "),\n",
+        "historico AS (\n",
+        "  SELECT\n",
+        "    p.REGISTRO AS anio,\n",
+        "    ROUND(p.PROPORCION_PORCENTAJE, 2) AS proporcion_pct,\n",
+        "    p.TOTAL_ELECTRICOS AS total_electricos,\n",
+        "    p.TOTAL_PARQUE AS total_parque,\n",
+        "    'Histórico' AS tipo\n",
+        "  FROM\n",
+        "    gold_proporcion_electricos_anio p\n",
+        "),\n",
+        "proyeccion AS (\n",
+        "  SELECT\n",
+        "    y.anio,\n",
+        "    ROUND(pr.L / (1.0 + EXP(-pr.k * (y.anio - pr.t0))), 2) AS proporcion_pct,\n",
+        "    CAST(\n",
+        "      ROUND(\n",
+        "        pr.base_parque\n",
+        "          * POWER(1.04, y.anio - pr.base_anio)\n",
+        "          * (pr.L / (1.0 + EXP(-pr.k * (y.anio - pr.t0))))\n",
+        "          / 100.0\n",
+        "      ) AS INT\n",
+        "    ) AS total_electricos,\n",
+        "    CAST(ROUND(pr.base_parque * POWER(1.04, y.anio - pr.base_anio)) AS INT) AS total_parque,\n",
+        "    'Proyección ML' AS tipo\n",
+        "  FROM\n",
+        "    (\n",
+        "      SELECT\n",
+        "        2027 AS anio\n",
+        "      UNION ALL\n",
+        "      SELECT\n",
+        "        2028\n",
+        "      UNION ALL\n",
+        "      SELECT\n",
+        "        2029\n",
+        "      UNION ALL\n",
+        "      SELECT\n",
+        "        2030\n",
+        "    ) y\n",
+        "      CROSS JOIN params pr\n",
+        ")\n",
+        "SELECT\n",
+        "  *\n",
+        "FROM\n",
+        "  historico\n",
+        "UNION ALL\n",
+        "SELECT\n",
+        "  *\n",
+        "FROM\n",
+        "  proyeccion\n",
+        "ORDER BY\n",
+        "  anio"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "f712b4c5",
+      "displayName": "Resumen de Modelos",
+      "layout": [
+        {
+          "widget": {
+            "name": "modelos_descripcion",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Modelos Implementados\n",
+                "\n",
+                "### 1. RandomForest — Predicción de Conteo por Departamento\n",
+                "Predice el número de vehículos eléctricos/híbridos por departamento y año.  \n",
+                "- **R² test = 0.41** | Features: año + DEPARTAMENTO (one-hot)  \n",
+                "- Entrenado con datos 2016–2026, validado con split 80/20  \n",
+                "- Predicciones disponibles para 2027–2029\n",
+                "\n",
+                "### 2. Crecimiento Logístico — Techo de Adopción Nacional\n",
+                "Modela la curva de adopción como proporción del parque total (curva S).  \n",
+                "- Techo de adopción: **9.51%** | Punto de inflexión: **año 2024**  \n",
+                "- **R² = 0.998** — excelente ajuste a datos históricos  \n",
+                "- Proyección 2030: ~9.3% del parque automotor nacional\n",
+                "\n",
+                "### 3. Modelo Registrado en Unity Catalog\n",
+                "- **Modelo:** `workspace.default.modelo_vehiculos_electricos`  \n",
+                "- **Versión:** 1 | **Alias:** Champion  \n",
+                "- Combina ambos modelos en un `PythonModel` personalizado  \n",
+                "- Instrucciones para serving endpoint en el notebook de ML"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_eh",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis_modelos",
+                  "fields": [
+                    {
+                      "name": "sum(Total_Electricos_Hibridos)",
+                      "expression": "SUM(`Total_Electricos_Hibridos`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Eléctricos/Híbridos"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total_Electricos_Hibridos)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_prop_2026",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis_modelos",
+                  "fields": [
+                    {
+                      "name": "sum(Proporcion_2026)",
+                      "expression": "SUM(`Proporcion_2026`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Proporción 2026"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Proporcion_2026)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_cagr",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis_modelos",
+                  "fields": [
+                    {
+                      "name": "sum(CAGR_Electricos)",
+                      "expression": "SUM(`CAGR_Electricos`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "CAGR Eléctricos"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(CAGR_Electricos)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_techo",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis_modelos",
+                  "fields": [
+                    {
+                      "name": "sum(Techo_Adopcion)",
+                      "expression": "SUM(`Techo_Adopcion`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Techo Adopción Logístico"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Techo_Adopcion)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 8,
+            "width": 3,
+            "height": 3
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "evolucion_proyeccion",
+      "displayName": "Evolución y Proyección",
+      "layout": [
+        {
+          "widget": {
+            "name": "elec_por_anio",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "proporcion_anio",
+                  "fields": [
+                    {
+                      "name": "REGISTRO",
+                      "expression": "`REGISTRO`"
+                    },
+                    {
+                      "name": "sum(TOTAL_ELECTRICOS)",
+                      "expression": "SUM(`TOTAL_ELECTRICOS`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Vehículos Eléctricos/Híbridos por Año"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "REGISTRO",
+                  "displayName": "REGISTRO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(TOTAL_ELECTRICOS)",
+                  "displayName": "TOTAL_ELECTRICOS",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "REGISTRO",
+                  "displayName": "REGISTRO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "proporcion_por_anio",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "proporcion_anio",
+                  "fields": [
+                    {
+                      "name": "REGISTRO",
+                      "expression": "`REGISTRO`"
+                    },
+                    {
+                      "name": "sum(PROPORCION_PORCENTAJE)",
+                      "expression": "SUM(`PROPORCION_PORCENTAJE`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Proporción de Eléctricos en el Parque Total"
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "REGISTRO",
+                  "displayName": "REGISTRO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(PROPORCION_PORCENTAJE)",
+                  "displayName": "PROPORCION_PORCENTAJE",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "REGISTRO",
+                  "displayName": "REGISTRO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "parque_vs_elec",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "parque_vs_elec",
+                  "fields": [
+                    {
+                      "name": "Tipo",
+                      "expression": "`Tipo`"
+                    },
+                    {
+                      "name": "REGISTRO",
+                      "expression": "`REGISTRO`"
+                    },
+                    {
+                      "name": "sum(Valor)",
+                      "expression": "SUM(`Valor`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Parque Total vs Eléctricos/Híbridos por Año"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "REGISTRO",
+                  "displayName": "REGISTRO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(Valor)",
+                  "displayName": "Valor",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Tipo",
+                  "displayName": "Tipo",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "analisis_geografico",
+      "displayName": "Análisis Geográfico",
+      "layout": [
+        {
+          "widget": {
+            "name": "deps_por_electricos",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "proporcion_dep",
+                  "fields": [
+                    {
+                      "name": "DEPARTAMENTO",
+                      "expression": "`DEPARTAMENTO`"
+                    },
+                    {
+                      "name": "sum(TOTAL_ELECTRICOS)",
+                      "expression": "SUM(`TOTAL_ELECTRICOS`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Departamentos por Total Eléctricos/Híbridos"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "DEPARTAMENTO",
+                  "displayName": "DEPARTAMENTO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(TOTAL_ELECTRICOS)",
+                  "displayName": "TOTAL_ELECTRICOS",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "DEPARTAMENTO",
+                  "displayName": "DEPARTAMENTO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "deps_por_proporcion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_deps_prop",
+                  "fields": [
+                    {
+                      "name": "DEPARTAMENTO",
+                      "expression": "`DEPARTAMENTO`"
+                    },
+                    {
+                      "name": "sum(Proporcion_Pct)",
+                      "expression": "SUM(`Proporcion_Pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Departamentos por Proporción de Adopción"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "DEPARTAMENTO",
+                  "displayName": "DEPARTAMENTO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(Proporcion_Pct)",
+                  "displayName": "Proporcion_Pct",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "DEPARTAMENTO",
+                  "displayName": "DEPARTAMENTO",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "top_municipios",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_muni_prop",
+                  "fields": [
+                    {
+                      "name": "MUNICIPIO",
+                      "expression": "`MUNICIPIO`"
+                    },
+                    {
+                      "name": "DEPARTAMENTO",
+                      "expression": "`DEPARTAMENTO`"
+                    },
+                    {
+                      "name": "TOTAL_PARQUE",
+                      "expression": "`TOTAL_PARQUE`"
+                    },
+                    {
+                      "name": "TOTAL_ELECTRICOS",
+                      "expression": "`TOTAL_ELECTRICOS`"
+                    },
+                    {
+                      "name": "PROPORCION_PORCENTAJE",
+                      "expression": "`PROPORCION_PORCENTAJE`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 20 Municipios por Proporción de Eléctricos"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "MUNICIPIO"
+                  },
+                  {
+                    "fieldName": "DEPARTAMENTO"
+                  },
+                  {
+                    "fieldName": "TOTAL_PARQUE"
+                  },
+                  {
+                    "fieldName": "TOTAL_ELECTRICOS"
+                  },
+                  {
+                    "fieldName": "PROPORCION_PORCENTAJE"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "clasificacion_municipios",
+      "displayName": "Clasificación de Municipios",
+      "layout": [
+        {
+          "widget": {
+            "name": "muni_por_nivel",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "clasificacion_muni",
+                  "fields": [
+                    {
+                      "name": "NIVEL_ADOPCION",
+                      "expression": "`NIVEL_ADOPCION`"
+                    },
+                    {
+                      "name": "count(MUNICIPIO)",
+                      "expression": "COUNT(`MUNICIPIO`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Municipios por Nivel de Adopción"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "NIVEL_ADOPCION",
+                  "displayName": "NIVEL_ADOPCION",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "count(MUNICIPIO)",
+                  "displayName": "MUNICIPIO",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "NIVEL_ADOPCION",
+                  "displayName": "NIVEL_ADOPCION",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "elec_por_nivel",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "clasificacion_muni",
+                  "fields": [
+                    {
+                      "name": "NIVEL_ADOPCION",
+                      "expression": "`NIVEL_ADOPCION`"
+                    },
+                    {
+                      "name": "sum(TOTAL_ELECTRICOS)",
+                      "expression": "SUM(`TOTAL_ELECTRICOS`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Eléctricos/Híbridos por Nivel de Adopción"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "NIVEL_ADOPCION",
+                  "displayName": "NIVEL_ADOPCION",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(TOTAL_ELECTRICOS)",
+                  "displayName": "TOTAL_ELECTRICOS",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "NIVEL_ADOPCION",
+                  "displayName": "NIVEL_ADOPCION",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "municipios_lideres",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "muni_lideres",
+                  "fields": [
+                    {
+                      "name": "MUNICIPIO",
+                      "expression": "`MUNICIPIO`"
+                    },
+                    {
+                      "name": "DEPARTAMENTO",
+                      "expression": "`DEPARTAMENTO`"
+                    },
+                    {
+                      "name": "TOTAL_PARQUE",
+                      "expression": "`TOTAL_PARQUE`"
+                    },
+                    {
+                      "name": "TOTAL_ELECTRICOS",
+                      "expression": "`TOTAL_ELECTRICOS`"
+                    },
+                    {
+                      "name": "PROPORCION_PORCENTAJE",
+                      "expression": "`PROPORCION_PORCENTAJE`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Municipios Líderes (≥10% de Adopción)"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "MUNICIPIO"
+                  },
+                  {
+                    "fieldName": "DEPARTAMENTO"
+                  },
+                  {
+                    "fieldName": "TOTAL_PARQUE"
+                  },
+                  {
+                    "fieldName": "TOTAL_ELECTRICOS"
+                  },
+                  {
+                    "fieldName": "PROPORCION_PORCENTAJE"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "predicciones_ml",
+      "displayName": "Predicciones ML",
+      "layout": [
+        {
+          "widget": {
+            "name": "predicciones_intro",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Predicciones del Modelo ML\n",
+                "\n",
+                "Esta página muestra las proyecciones del modelo de crecimiento logístico registrado en Unity Catalog.  \n",
+                "\n",
+                "**Parámetros del modelo logístico:**\n",
+                "- Techo de adopción (L): **9.51%**\n",
+                "- Punto de inflexión (t₀): **2024**\n",
+                "- Tasa de crecimiento (k): **0.665**\n",
+                "- R² del ajuste: **0.998**\n",
+                "\n",
+                "**Modelo RandomForest (conteo por departamento):**\n",
+                "- R² test: **0.41**\n",
+                "- Features: año + DEPARTAMENTO (one-hot encoded)\n",
+                "\n",
+                "Los datos históricos (2016–2026) provienen de las tablas Gold. Las proyecciones (2027–2030) utilizan el modelo logístico para la proporción nacional y una tasa de crecimiento del 4% anual para el parque automotor total."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "tabla_predicciones",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "predicciones_ml",
+                  "fields": [
+                    {
+                      "name": "anio",
+                      "expression": "`anio`"
+                    },
+                    {
+                      "name": "tipo",
+                      "expression": "`tipo`"
+                    },
+                    {
+                      "name": "proporcion_pct",
+                      "expression": "`proporcion_pct`"
+                    },
+                    {
+                      "name": "total_electricos",
+                      "expression": "`total_electricos`"
+                    },
+                    {
+                      "name": "total_parque",
+                      "expression": "`total_parque`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Histórico y Proyecciones"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "anio"
+                  },
+                  {
+                    "fieldName": "tipo"
+                  },
+                  {
+                    "fieldName": "proporcion_pct"
+                  },
+                  {
+                    "fieldName": "total_electricos"
+                  },
+                  {
+                    "fieldName": "total_parque"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "linea_electricos",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "predicciones_ml",
+                  "fields": [
+                    {
+                      "name": "tipo",
+                      "expression": "`tipo`"
+                    },
+                    {
+                      "name": "anio",
+                      "expression": "`anio`"
+                    },
+                    {
+                      "name": "sum(total_electricos)",
+                      "expression": "SUM(`total_electricos`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Eléctricos: Histórico vs Proyección"
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "anio",
+                  "displayName": "anio",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_electricos)",
+                  "displayName": "total_electricos",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "tipo",
+                  "displayName": "tipo",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "linea_proporcion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "predicciones_ml",
+                  "fields": [
+                    {
+                      "name": "tipo",
+                      "expression": "`tipo`"
+                    },
+                    {
+                      "name": "anio",
+                      "expression": "`anio`"
+                    },
+                    {
+                      "name": "sum(proporcion_pct)",
+                      "expression": "SUM(`proporcion_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Proporción de Adopción: Histórico vs Proyección"
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "anio",
+                  "displayName": "anio",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(proporcion_pct)",
+                  "displayName": "proporcion_pct",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "tipo",
+                  "displayName": "tipo",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "barra_parque",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "predicciones_ml",
+                  "fields": [
+                    {
+                      "name": "tipo",
+                      "expression": "`tipo`"
+                    },
+                    {
+                      "name": "anio",
+                      "expression": "`anio`"
+                    },
+                    {
+                      "name": "sum(total_parque)",
+                      "expression": "SUM(`total_parque`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Parque Total vs Eléctricos Proyectado"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "anio",
+                  "displayName": "anio",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_parque)",
+                  "displayName": "total_parque",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "tipo",
+                  "displayName": "tipo",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 11,
+            "width": 6,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
